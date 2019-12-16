@@ -4,14 +4,7 @@ CREATE TABLE guilds (
     id BIGINT PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
 
-    number_of_rules INT NOT NULL DEFAULT 0,
-    rejection_message TEXT,
-
-    rules_channel BIGINT,
-    roles_channel BIGINT,
-    log_channel BIGINT,
-    join_log_channel BIGINT,
-    join_response_channel BIGINT
+    rejection_message TEXT
 ) WITHOUT ROWID;
 
 CREATE TABLE rules (
@@ -36,28 +29,6 @@ CREATE TABLE rules (
 
     PRIMARY KEY (guild_id, rule_number ASC)
 ) WITHOUT ROWID;
-
-CREATE TABLE user_responses (
-    guild_id BIGINT NOT NULL,
-    user_id BIGINT NOT NULL,
-    rule_number INT NOT NULL,
-
-    response TEXT NOT NULL,
-
-    FOREIGN KEY (guild_id)
-        REFERENCES guilds (id)
-        ON DELETE CASCADE,
-
-    FOREIGN KEY (guild_id, user_id)
-        REFERENCES users (guild_id, user_id)
-        ON DELETE CASCADE,
-
-    FOREIGN KEY (guild_id, rule_number)
-        REFERENCES rules (guild_id, rule_number)
-        ON DELETE CASCADE,
-
-    PRIMARY KEY (guild_id, user_id, rule_number)
-);
 
 CREATE TABLE role_categories (
     id INTEGER PRIMARY KEY NOT NULL,
@@ -125,6 +96,12 @@ CREATE TABLE users (
     guild_id BIGINT NOT NULL,
     username TEXT NOT NULL,
 
+    -- 0: Fresh user
+    -- 1: Answering Questions
+    -- 2: Finished Answering
+    -- 3: Accepted
+    join_status INT NOT NULL DEFAULT 0,
+
     -- 0: Unjoined
     -- 1: User
     -- 2: Moderator
@@ -132,19 +109,20 @@ CREATE TABLE users (
     server_rank INT NOT NULL DEFAULT 0,
     rank_role BIGINT,
 
-    join_status INT NOT NULL DEFAULT 0,
     silenced_until TIMESTAMP,
-    first_joined TIMESTAMP,
+
+    first_joined TIMESTAMP NOT NULL,
     last_left TIMESTAMP,
     times_left INT NOT NULL DEFAULT 0,
+
     confirmed_18 BOOLEAN NOT NULL DEFAULT false,
 
     FOREIGN KEY (guild_id)
         REFERENCES guilds (id)
         ON DELETE CASCADE,
 
-    FOREIGN KEY (guild_id, rank_role)
-        REFERENCES roles (guild_id, role_id)
+    FOREIGN KEY (rank_role)
+        REFERENCES roles (role_id)
         ON DELETE SET NULL,
 
     PRIMARY KEY (guild_id, user_id)
@@ -155,15 +133,37 @@ CREATE TABLE user_roles (
     user_id BIGINT NOT NULL,
     role_id BIGINT NOT NULL,
 
-    FOREIGN KEY (user_id)
-        REFERENCES users (id)
+    FOREIGN KEY (guild_id, user_id)
+        REFERENCES users (guild_id, id)
         ON DELETE CASCADE,
         
-    FOREIGN KEY (guild_id, role_id)
-        REFERENCES guild_roles (guild_id, role_id)
+    FOREIGN KEY (role_id)
+        REFERENCES roles (role_id)
         ON DELETE CASCADE,
 
     PRIMARY KEY (guild_id, user_id, role_id)
+) WITHOUT ROWID;
+
+CREATE TABLE user_responses (
+    guild_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    rule_number INT NOT NULL,
+
+    response TEXT NOT NULL,
+
+    FOREIGN KEY (guild_id)
+        REFERENCES guilds (id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (guild_id, user_id)
+        REFERENCES users (guild_id, user_id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (guild_id, rule_number)
+        REFERENCES rules (guild_id, rule_number)
+        ON DELETE CASCADE,
+
+    PRIMARY KEY (guild_id, user_id, rule_number)
 ) WITHOUT ROWID;
 
 CREATE TABLE permission_rules (
@@ -176,9 +176,9 @@ CREATE TABLE permission_rules (
 
     -- Permission types:
     -- 0: Grant read
-    -- 1: Deny read
-    -- 2: Deny write
-    -- 3: Grant write
+    -- 1: Grant write
+    -- 2: Deny read
+    -- 3: Deny write
     permission_type INT NOT NULL,
 
     FOREIGN KEY (guild_id)
@@ -191,6 +191,28 @@ CREATE TABLE permission_rules (
 
     UNIQUE (guild_id, channel_id, role_id, permission_type)
 );
+
+CREATE TABLE special_channels (
+    guild_id BIGINT NOT NULL,
+    channel_id BIGINT NOT NULL,
+
+    -- Special Types:
+    -- 0: Log channel. Bot errors and warnings will appear here.
+    -- 1: Join log, to keep track of joins, leaves, kicks, and bans.
+    -- 2: Join approval channel, where moderators approve or reject new users.
+    -- 3: Rules channel. The bot keeps a post with the up to date rules here.
+    -- 4: Roles channel. The bot keeps the role list up to date here.
+    -- 5: Insta-deletion channel. Sends to `other_channel` if not null.
+    special_type INT NOT NULL,
+
+    other_channel BIGINT,
+
+    FOREIGN KEY (guild_id)
+        REFERENCES guilds (id)
+        ON DELETE CASCADE,
+
+    PRIMARY KEY (guild_id, channel_id)
+) WITHOUT ROWID;
 
 CREATE UNIQUE INDEX default_roles
     ON roles (guild_id, role_type)
@@ -219,3 +241,6 @@ CREATE INDEX guild_permissions
 
 CREATE INDEX guild_rules
     ON rules (guild_id);
+
+CREATE INDEX channel_perms
+    ON permission_rules (guild_id, channel_id);
